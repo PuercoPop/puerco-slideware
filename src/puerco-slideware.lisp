@@ -21,10 +21,7 @@ they have 2 axies, x-axis are numbers y-axis letters.
 #+(or)(setf *slides-folder* #P"/home/puercopop/quicklisp/local-projects/puerco-slideware/data/")
 
 (defclass slide ()
-  ((name :initarg :name
-         :reader slide-name
-         :documentation "For REPL purposes.")
-   (content :initform ""
+  ((content :initform ""
               :initarg :content
               :reader slide-content
               :documentation "")
@@ -43,7 +40,9 @@ they have 2 axies, x-axis are numbers y-axis letters.
    (next :initform nil
          :initarg :next
          :accessor slide-next
-         :documentation "")))
+         :documentation "")
+   (path :initarg :path
+         :reader slide-path)))
 
 (defun make-slide (pathname)
   (make-instance 'slide
@@ -83,12 +82,14 @@ they have 2 axies, x-axis are numbers y-axis letters.
 (defun next-slide (pathname)
   ;; If look down, if not go right.
   (let* ((coord (get-coord-from-file pathname))
-         (down-file (slide-file (down coord)))
-         (right-file (slide-file (right coord))))
+         (down (down coord))
+         (down-file (slide-file down))
+         (right (right coord))
+         (right-file (slide-file right)))
     (cond
-      ((uiop/filesystem:file-exists-p down-file)
+      ((uiop/filesystem:file-exists-p down)
        (values down-file nil))
-      ((uiop/filesystem:file-exists-p right-file)
+      ((uiop/filesystem:file-exists-p right)
        (values right-file t))
       (t (values nil nil)))))
 
@@ -100,12 +101,30 @@ they have 2 axies, x-axis are numbers y-axis letters.
   "Load the slides from SLIDES-FOLDER."
   ;; Traverse the graph down then left. All the left links should point to the
   ;; top most element of the next column if one exists.
-  (let ((current-coord (list 0 0)))
-    (setf *start* (make-slide (slide-file current-coord)))
+  (let* ((current-coord (list 0 0))
+         (current-slide (make-slide (slide-file current-coord))))
+    (setf *start* current-slide)
     (loop
-      :for (next-slide leftp) := (multiple-value-list (next-slide (slide-file current-coord)))
-      :while (or next-slide leftp)
+      :with current-column := nil
+      :for (next-slide-path leftp) := (multiple-value-list (next-slide (slide-file current-coord)))
+      :while (or next-slide-path leftp)
+      :for next-slide := (make-slide next-slide-path)
       :do
          (if (not leftp)
-             'foo
-             'bar))))
+             (progn
+               (push current-slide current-column)
+               (psetf (slide-down current-slide)
+                      next-slide))
+             (progn
+               (mapcar (lambda (slide)
+                         (setf (slide-next slide)
+                               next-slide))
+                       current-column)
+               (mapcar (lambda (slide)
+                         (setf (slide-prev slide)
+                               (car current-column)))
+                       (cdr current-column))
+               (psetf (slide-prev next-slide) (car current-column)
+                      current-column nil)))
+      (psetf current-slide next-slide
+             current-coord (get-coord-from-file (slide-path next-slide))))))
